@@ -6,12 +6,39 @@ from tensorflow.keras.applications import InceptionV3
 from sklearn.preprocessing import StandardScaler
 import joblib
 import os
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 import base64
 import tempfile
+import logging
+
 
 app = Flask(__name__)
-CORS(app)
+# Allow specific origins
+allowed_origins = [
+    "https://msc-classification.vercel.app",  # Your frontend URL
+    "http://localhost:3000",  # Local development URL
+]
+cors = CORS(
+    app,
+    resources={
+        r"/predict": {
+            "origins": allowed_origins,
+            "methods": ["POST", "OPTIONS"],
+            "allow_headers": ["Content-Type"],
+        }
+    },
+)
+
+
+@app.route("/predict", methods=["OPTIONS"])
+def handle_preflight():
+    response = jsonify({"message": "Preflight request handled"})
+    response.headers.add("Access-Control-Allow-Origin", ", ".join(allowed_origins))
+    response.headers.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+    response.headers.add("Access-Control-Allow-Headers", "Content-Type")
+    return response
+
+logging.basicConfig(level=logging.DEBUG)
 
 # Load the trained SVM models and scalers
 svm_model = joblib.load("svm_model.pkl")
@@ -25,6 +52,8 @@ base_model = InceptionV3(
     weights="imagenet", include_top=False, input_shape=(crop_size, crop_size, 3)
 )
 model = tf.keras.Sequential([base_model, tf.keras.layers.GlobalAveragePooling2D()])
+
+# Preflight request handler
 
 
 def preprocess_image(image):
@@ -67,6 +96,7 @@ def save_temp_image(image, label):
 
 
 @app.route("/predict", methods=["POST"])
+@cross_origin()
 def predict_images():
     if "files" not in request.files:
         return jsonify({"error": "No files uploaded"}), 400
@@ -84,14 +114,23 @@ def predict_images():
 
     for file in files:
         try:
-            image = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_GRAYSCALE)
+            image = cv2.imdecode(
+                np.frombuffer(file.read(), np.uint8), cv2.IMREAD_GRAYSCALE
+            )
             if image is None:
-                results.append({"filename": file.filename, "error": "Could not read image"})
+                results.append(
+                    {"filename": file.filename, "error": "Could not read image"}
+                )
                 continue
 
             processed_image = preprocess_image(image)
             singlet_aggregate_label = predict_singlet_aggregate(processed_image)
-            results.append({"filename": file.filename, "singlet_aggregate_label": singlet_aggregate_label})
+            results.append(
+                {
+                    "filename": file.filename,
+                    "singlet_aggregate_label": singlet_aggregate_label,
+                }
+            )
 
             # Save the image temporarily and store its path
             temp_image_path = save_temp_image(image, singlet_aggregate_label)
@@ -121,7 +160,9 @@ def predict_images():
     live_percentage = (live_count / total_images) * 100 if total_images > 0 else 0
     dead_percentage = (dead_count / total_images) * 100 if total_images > 0 else 0
     singlet_percentage = (singlet_count / total_images) * 100 if total_images > 0 else 0
-    aggregate_percentage = (aggregate_count / total_images) * 100 if total_images > 0 else 0
+    aggregate_percentage = (
+        (aggregate_count / total_images) * 100 if total_images > 0 else 0
+    )
 
     # Convert images to base64 for frontend display
     def encode_image_to_base64(image_path):
