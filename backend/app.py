@@ -15,7 +15,7 @@ import logging
 app = Flask(__name__)
 # Allow specific origins
 allowed_origins = [
-    "https://msc-classification.vercel.app",  # Your frontend URL
+    "msc-classification-coo3zmqd2-kenneths-projects-55843bdf.vercel.app",  # Your frontend URL
     "http://localhost:3000",  # Local development URL
 ]
 cors = CORS(
